@@ -1,4 +1,4 @@
-import type { Plugin, PluginOptions } from "@opencode-ai/plugin";
+import { tool, type Plugin, type PluginOptions } from "@opencode-ai/plugin";
 
 interface MempalacePluginOptions extends Record<string, unknown> {
   /** Command array to start the mempalace MCP server. Defaults to ["bun", "run", "<auto-detected path>"] */
@@ -40,9 +40,9 @@ task(
 
   Execute these queries IN ORDER, stop early if ChromaDB is not running:
 
-  1. Call mcp_skill_mcp(mcp_name='mempalace', tool_name='mempalace_diary_read', arguments={days: 3})
-  2. Call mcp_skill_mcp(mcp_name='mempalace', tool_name='mempalace_status')
-  3. Call mcp_skill_mcp(mcp_name='mempalace', tool_name='mempalace_kg_query', arguments={name: '*'})
+  1. Call mcp_mempalace_mempalace_diary_read(agent_name='sisyphus', last_n=5)
+  2. Call mcp_mempalace_mempalace_status()
+  3. Call mcp_mempalace_mempalace_kg_query(entity='*')
 
   Return a concise summary of:
   - Recent diary entries (last 3 days)
@@ -59,6 +59,7 @@ const mempalacePlugin: Plugin = async (_input, options?: PluginOptions) => {
   const opts = (options ?? {}) as MempalacePluginOptions;
   const mcpCommand = opts.mcpCommand ?? DEFAULT_MCP_COMMAND;
   const sessionsSeen = new Set<string>();
+  const diaryWritten = new Set<string>();
 
   return {
     config: opts.disableMcp
@@ -83,6 +84,29 @@ const mempalacePlugin: Plugin = async (_input, options?: PluginOptions) => {
           output.system.push(PALACE_PROTOCOL);
         },
 
+    // --- Hook 3: Track diary writes ---
+    "tool.execute.after": async (
+      input: { tool: string; sessionID: string; callID: string; args: unknown },
+      _output: { title: string; output: string; metadata: Record<string, unknown> },
+    ) => {
+      if (input.tool === "mcp_mempalace_mempalace_diary_write") {
+        diaryWritten.add(input.sessionID);
+      }
+    },
+
+    // --- Hook 4: Pre-compaction reminder ---
+    "experimental.session.compacting": async (
+      input: { sessionID: string },
+      output: { context: string[]; prompt?: string },
+    ) => {
+      if (!diaryWritten.has(input.sessionID)) {
+        output.context.push(
+          "⚠️ MEMPALACE: No diary entry written yet for this session. Call mcp_mempalace_mempalace_diary_write with a session summary BEFORE important context is lost to compaction."
+        );
+      }
+    },
+
+    // --- Hook 5: Auto-load on first message ---
     "chat.message": opts.disableAutoLoad
       ? undefined
       : async (
@@ -103,6 +127,21 @@ const mempalacePlugin: Plugin = async (_input, options?: PluginOptions) => {
             firstTextPart.text = `${SESSION_START_INSTRUCTION}\n\n${firstTextPart.text}`;
           }
         },
+
+    // --- Hook 6: Custom tool ---
+    tool: {
+      mempalace_check_diary: tool({
+        description:
+          "Check if a mempalace diary entry has been written for the current session. Call before ending work to ensure session learnings are persisted.",
+        args: {},
+        execute: async (_args, context) => {
+          if (diaryWritten.has(context.sessionID)) {
+            return "✅ Diary entry already written for this session.";
+          }
+          return "⚠️ No diary entry written yet for this session. Call mcp_mempalace_mempalace_diary_write to save session learnings before they are lost.";
+        },
+      }),
+    },
   };
 };
 
