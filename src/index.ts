@@ -1,4 +1,5 @@
-import { tool, type Plugin, type PluginOptions } from "@opencode-ai/plugin";
+import { tool, type Plugin, type PluginInput, type PluginOptions } from "@opencode-ai/plugin";
+import { checkAndUpdate, type UpdateResult } from "./auto-update.js";
 
 interface MempalacePluginOptions extends Record<string, unknown> {
   /** Command array to start the mempalace MCP server. Defaults to ["bun", "run", "<auto-detected path>"] */
@@ -9,6 +10,8 @@ interface MempalacePluginOptions extends Record<string, unknown> {
   disableProtocol?: boolean;
   /** Disable auto-loading mempalace context on first message of each session */
   disableAutoLoad?: boolean;
+  /** Disable auto-update check on session start */
+  disableAutoUpdate?: boolean;
   /** ChromaDB server URL. Defaults to http://localhost:8000 */
   chromaUrl?: string;
 }
@@ -38,11 +41,37 @@ Call both in parallel. If either fails (ChromaDB not running), skip silently and
 Use the results to inform your responses — do not announce or summarize them unless the user asks.
 Proceed with the user's request immediately.`;
 
-const mempalacePlugin: Plugin = async (_input, options?: PluginOptions) => {
+const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptions) => {
   const opts = (options ?? {}) as MempalacePluginOptions;
   const mcpCommand = opts.mcpCommand ?? DEFAULT_MCP_COMMAND;
   const sessionsSeen = new Set<string>();
   const diaryWritten = new Set<string>();
+
+  // --- Auto-update check (fire-and-forget) ---
+  let updateResult: UpdateResult | null = null;
+  if (!opts.disableAutoUpdate) {
+    checkAndUpdate(async (cwd) => {
+      try {
+        const result = await input.$`bun install`.cwd(cwd).quiet().nothrow();
+        return result.exitCode === 0;
+      } catch {
+        return false;
+      }
+    })
+      .then((result) => {
+        updateResult = result;
+        if (result.updated) {
+          console.log(
+            `[opencode-mempalace] Auto-updated: ${result.currentVersion} \u2192 ${result.latestVersion}. Restart to apply.`,
+          );
+        } else if (result.error) {
+          console.log(
+            `[opencode-mempalace] Update available: ${result.currentVersion} \u2192 ${result.latestVersion} (install failed: ${result.error})`,
+          );
+        }
+      })
+      .catch(() => {});
+  }
 
   return {
     config: opts.disableMcp
@@ -58,14 +87,19 @@ const mempalacePlugin: Plugin = async (_input, options?: PluginOptions) => {
           }
         },
 
-    "experimental.chat.system.transform": opts.disableProtocol
-      ? undefined
-      : async (
-          _input: { sessionID?: string; model: unknown },
-          output: { system: string[] },
-        ) => {
-          output.system.push(PALACE_PROTOCOL);
-        },
+    "experimental.chat.system.transform": async (
+      _input: { sessionID?: string; model: unknown },
+      output: { system: string[] },
+    ) => {
+      if (!opts.disableProtocol) {
+        output.system.push(PALACE_PROTOCOL);
+      }
+      if (updateResult?.updated) {
+        output.system.push(
+          `[opencode-mempalace] Updated ${updateResult.currentVersion} \u2192 ${updateResult.latestVersion}. Restart OpenCode to apply.`,
+        );
+      }
+    },
 
     // --- Hook 3: Track diary writes ---
     "tool.execute.after": async (
