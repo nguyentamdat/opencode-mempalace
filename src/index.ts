@@ -9,6 +9,8 @@ interface MempalacePluginOptions extends Record<string, unknown> {
   disableProtocol?: boolean;
   /** Disable auto-loading mempalace context on first message of each session */
   disableAutoLoad?: boolean;
+  /** ChromaDB server URL. Defaults to http://localhost:8000 */
+  chromaUrl?: string;
 }
 
 const DEFAULT_MCP_COMMAND = [
@@ -67,6 +69,7 @@ const mempalacePlugin: Plugin = async (_input, options?: PluginOptions) => {
             config.mcp.mempalace = {
               type: "local" as const,
               command: mcpCommand,
+              environment: { CHROMA_URL: opts.chromaUrl ?? "http://localhost:8001" },
             };
           }
         },
