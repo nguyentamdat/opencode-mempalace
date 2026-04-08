@@ -29,31 +29,14 @@ const PALACE_PROTOCOL = `IMPORTANT — MemPalace Memory Protocol:
 This protocol ensures the AI KNOWS before it speaks. Storage is not memory — but storage + this protocol = memory.`;
 
 const SESSION_START_INSTRUCTION = `[SYSTEM — MemPalace Context Load]
-Spawn a background explore agent to load mempalace context for this session:
+On session start, load mempalace context by calling these tools directly (do NOT delegate to a subagent):
 
-task(
-  subagent_type="explore",
-  run_in_background=true,
-  load_skills=["mempalace"],
-  description="Load mempalace context",
-  prompt="Query mempalace MCP tools to retrieve relevant context for this session.
+1. mcp_mempalace_mempalace_diary_read(agent_name="sisyphus", last_n=3) — recent diary entries
+2. mcp_mempalace_mempalace_status() — palace overview (wings, rooms, drawer count)
 
-  Execute these queries IN ORDER, stop early if ChromaDB is not running:
-
-  1. Call mcp_mempalace_mempalace_diary_read(agent_name='sisyphus', last_n=5)
-  2. Call mcp_mempalace_mempalace_status()
-  3. Call mcp_mempalace_mempalace_kg_query(entity='*')
-
-  Return a concise summary of:
-  - Recent diary entries (last 3 days)
-  - Palace structure (wings, room count, total memories)
-  - Key entities and their latest facts
-
-  If ChromaDB is not running or mempalace tools fail, just return 'Mempalace unavailable - ChromaDB not running.'
-  Do NOT retry failed calls. Do NOT try to fix the connection."
-)
-
-Continue with the user's request immediately after spawning. Collect results via background_output when the notification arrives.`;
+Call both in parallel. If either fails (ChromaDB not running), skip silently and continue.
+Use the results to inform your responses — do not announce or summarize them unless the user asks.
+Proceed with the user's request immediately.`;
 
 const mempalacePlugin: Plugin = async (_input, options?: PluginOptions) => {
   const opts = (options ?? {}) as MempalacePluginOptions;
