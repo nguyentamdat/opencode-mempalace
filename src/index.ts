@@ -16,11 +16,7 @@ interface MempalacePluginOptions extends Record<string, unknown> {
   chromaUrl?: string;
 }
 
-const DEFAULT_MCP_COMMAND = [
-  "bun",
-  "run",
-  "/home/dat/mempalace-js/src/mcp-server.ts",
-];
+const DEFAULT_MCP_COMMAND = ["npx", "-y", "-p", "@nguyentamdat/mempalace", "mempalace-mcp"];
 
 const PALACE_PROTOCOL = `IMPORTANT — MemPalace Memory Protocol:
 1. ON WAKE-UP: Call mempalace_status to load palace overview + AAAK spec.
@@ -39,7 +35,8 @@ On session start, load mempalace context by calling these tools directly (do NOT
 
 Call both in parallel. If either fails (ChromaDB not running), skip silently and continue.
 Use the results to inform your responses — do not announce or summarize them unless the user asks.
-Proceed with the user's request immediately.`;
+Proceed with the user's request immediately.
+<!-- MEMPALACE -->`;
 
 const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptions) => {
   const opts = (options ?? {}) as MempalacePluginOptions;
