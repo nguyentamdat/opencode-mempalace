@@ -26,6 +26,12 @@ try {
   // Directory might already exist or no permission
 }
 
+// Flush on process exit to ensure all logs are written
+process.on("exit", flush)
+process.on("beforeExit", flush)
+process.on("SIGINT", () => { flush(); process.exit(0) })
+process.on("SIGTERM", () => { flush(); process.exit(0) })
+
 function flush(): void {
   if (buffer.length === 0) return
   const data = buffer.join("")
@@ -42,6 +48,14 @@ function flush(): void {
   } catch {
     // Ignore write errors - tmp log is backup
   }
+}
+
+/**
+ * Flush logs immediately (synchronous).
+ * Use this for critical logs that must be written immediately.
+ */
+export function flushSync(): void {
+  flush()
 }
 
 function scheduleFlush(): void {

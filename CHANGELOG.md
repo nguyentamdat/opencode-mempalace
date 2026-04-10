@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.4] - 2025-01-XX
+
+### Fixed
+- **Immediate log flush**: Entry log is now written to file immediately (not buffered)
+  - Added `flushSync()` function for critical logs
+  - Plugin load log appears in file immediately, not just console
+  - Added process exit handlers to ensure all logs are flushed on shutdown
+  - Fixed issue where logs only appeared in console but not in /tmp file
+
 ## [0.2.3] - 2025-01-XX
 
 ### Fixed

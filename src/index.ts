@@ -5,7 +5,7 @@ import { checkAndUpdate, type UpdateResult } from "./auto-update.js";
 import { StateManager } from "./state.js";
 import { mine, mineSync, wakeUp, isInitialized, initialize } from "./mempalace-cli.js";
 import { getWingFromPath, isEmptyWorkspace } from "./utils.js";
-import { log, logWarn, logError } from "./logger.js";
+import { log, logWarn, logError, flushSync } from "./logger.js";
 import { runCommand } from "./spawn.js";
 import { createRequire } from "node:module";
 
@@ -55,6 +55,8 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
   const opts = (options ?? {}) as MempalacePluginOptions;
   
   log("Plugin loading", { version: PLUGIN_VERSION, directory: input.directory });
+  flushSync(); // Ensure entry log is written immediately
+  
   
   const mcpCommand = opts.mcpCommand ?? DEFAULT_MCP_COMMAND;
   const sessionsSeen = new Set<string>();
