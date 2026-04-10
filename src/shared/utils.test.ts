@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { getWingFromPath, isEmptyWorkspace } from "../src/utils.js";
+import { getWingFromPath, isEmptyWorkspace } from "./utils.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";

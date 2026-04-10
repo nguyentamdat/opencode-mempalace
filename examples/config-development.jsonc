@@ -1,0 +1,10 @@
+{
+  "comment": "Development configuration - disable auto-update for stability",
+  "plugin": [
+    ["opencode-mempalace", {
+      "disableAutoUpdate": true,
+      "threshold": 10,
+      "disableAutoMining": false
+    }]
+  ]
+}

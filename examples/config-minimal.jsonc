@@ -1,0 +1,4 @@
+{
+  "comment": "Minimal configuration - just add the plugin",
+  "plugin": ["opencode-mempalace"]
+}

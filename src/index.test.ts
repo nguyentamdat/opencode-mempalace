@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, mock } from "bun:test";
-import plugin from "../src/index.js";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import plugin from "./index.js";
 import type { PluginInput, PluginOptions } from "@opencode-ai/plugin";
 import * as fs from "node:fs";
 import * as path from "node:path";

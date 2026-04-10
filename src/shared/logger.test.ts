@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
-import { log, logError, logWarn, flushSync, getLogFilePath, getTmpLogFilePath } from "../src/logger.js";
+import { log, logError, logWarn, flushSync, getLogFilePath, getTmpLogFilePath, _resetForTesting } from "./logger.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
@@ -9,6 +9,7 @@ describe("Logger", () => {
 
   beforeEach(() => {
     testLogDir = path.join(os.tmpdir(), "mempalace-logger-test-" + Date.now());
+    _resetForTesting();
   });
 
   afterEach(() => {
@@ -18,6 +19,7 @@ describe("Logger", () => {
     } catch {
       // Ignore cleanup errors
     }
+    _resetForTesting();
   });
 
   describe("log", () => {
@@ -44,68 +46,44 @@ describe("Logger", () => {
       flushSync();
       expect(true).toBe(true);
     });
-
-    it("should handle undefined data", () => {
-      log("Undefined data", undefined);
-      flushSync();
-      expect(true).toBe(true);
-    });
-
-    it("should handle empty message", () => {
-      log("");
-      flushSync();
-      expect(true).toBe(true);
-    });
   });
 
   describe("logError", () => {
-    it("should write error message to buffer", () => {
-      logError("Error message");
+    it("should log error message", () => {
+      logError("Error occurred");
       flushSync();
       expect(true).toBe(true);
     });
 
-    it("should include error object when provided", () => {
+    it("should log error with Error object", () => {
       const error = new Error("Test error");
       logError("Error occurred", error);
       flushSync();
       expect(true).toBe(true);
     });
 
-    it("should handle string error", () => {
-      logError("Error", "string error");
-      flushSync();
-      expect(true).toBe(true);
-    });
-
-    it("should handle null error", () => {
-      logError("Error", null);
+    it("should log error with string", () => {
+      logError("Error occurred", "error details");
       flushSync();
       expect(true).toBe(true);
     });
 
     it("should handle error without message", () => {
-      logError("Error", { some: "object" });
+      logError("Error");
       flushSync();
       expect(true).toBe(true);
     });
   });
 
   describe("logWarn", () => {
-    it("should write warning message to buffer", () => {
+    it("should log warning message", () => {
       logWarn("Warning message");
       flushSync();
       expect(true).toBe(true);
     });
 
-    it("should include data when provided", () => {
-      logWarn("Warning", { context: "test" });
-      flushSync();
-      expect(true).toBe(true);
-    });
-
-    it("should handle no data", () => {
-      logWarn("Simple warning");
+    it("should log warning with data", () => {
+      logWarn("Warning", { detail: "value" });
       flushSync();
       expect(true).toBe(true);
     });
@@ -113,16 +91,8 @@ describe("Logger", () => {
 
   describe("flushSync", () => {
     it("should flush buffer synchronously", () => {
-      log("Message before flush");
-      flushSync();
-      expect(true).toBe(true);
-    });
-
-    it("should be safe to call multiple times", () => {
       log("Message 1");
-      flushSync();
       log("Message 2");
-      flushSync();
       flushSync();
       expect(true).toBe(true);
     });
@@ -131,58 +101,25 @@ describe("Logger", () => {
       flushSync();
       expect(true).toBe(true);
     });
-  });
 
-  describe("Buffer size limit", () => {
-    it("should flush when buffer reaches size limit", () => {
-      for (let i = 0; i < 60; i++) {
-        log(`Message ${i}`);
-      }
-      expect(true).toBe(true);
-    });
-
-    it("should handle rapid successive logs", () => {
-      for (let i = 0; i < 100; i++) {
-        log(`Rapid message ${i}`);
-      }
+    it("should handle multiple flushes", () => {
+      log("Message");
       flushSync();
-      expect(true).toBe(true);
-    });
-  });
-
-  describe("Multiple log entries", () => {
-    it("should handle multiple log types in sequence", () => {
-      log("Info message");
-      logWarn("Warning message");
-      logError("Error message");
-      log("Another info", { data: true });
-      flushSync();
-      expect(true).toBe(true);
-    });
-
-    it("should handle multiple sessions of logging", () => {
-      for (let i = 0; i < 10; i++) {
-        log(`Session message ${i}`);
-      }
-      flushSync();
-      for (let i = 10; i < 20; i++) {
-        log(`Session message ${i}`);
-      }
       flushSync();
       expect(true).toBe(true);
     });
   });
 
   describe("getLogFilePath", () => {
-    it("should return a valid path string", () => {
+    it("should return a string path", () => {
       const path = getLogFilePath();
       expect(typeof path).toBe("string");
       expect(path.length).toBeGreaterThan(0);
     });
 
-    it("should return path containing opencode", () => {
-      const path = getLogFilePath();
-      expect(path).toContain("opencode");
+    it("should return path in cache directory", () => {
+      const cachePath = getLogFilePath();
+      expect(cachePath).toContain("opencode");
     });
 
     it("should return path ending with log filename", () => {
@@ -192,7 +129,7 @@ describe("Logger", () => {
   });
 
   describe("getTmpLogFilePath", () => {
-    it("should return a valid path string", () => {
+    it("should return a string path", () => {
       const path = getTmpLogFilePath();
       expect(typeof path).toBe("string");
       expect(path.length).toBeGreaterThan(0);

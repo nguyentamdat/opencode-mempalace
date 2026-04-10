@@ -71,4 +71,10 @@ export class StateManager {
   releaseMiningLock(sessionId: string): void {
     this.miningLocks.set(sessionId, false);
   }
+
+  /** Reset for testing - clears all internal state */
+  _resetForTesting(): void {
+    this.counts.clear();
+    this.miningLocks.clear();
+  }
 }

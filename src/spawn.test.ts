@@ -1,4 +1,4 @@
-import { describe, it, expect, mock } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import {
   isBunRuntime,
   spawnAsync,
@@ -6,7 +6,7 @@ import {
   runCommand,
   runCommandSync,
   runCommandWithOutput,
-} from "../src/spawn.js";
+} from "./spawn.js";
 
 describe("isBunRuntime", () => {
   it("should detect Bun runtime correctly", () => {

@@ -1,0 +1,15 @@
+{
+  "comment": "Advanced configuration with all options",
+  "plugin": [
+    ["opencode-mempalace", {
+      "mcpCommand": ["python3", "-m", "mempalace.mcp_server"],
+      "disableMcp": false,
+      "disableProtocol": false,
+      "disableAutoLoad": false,
+      "disableAutoUpdate": false,
+      "palacePath": "/custom/path/to/palace",
+      "disableAutoMining": false,
+      "threshold": 20
+    }]
+  ]
+}

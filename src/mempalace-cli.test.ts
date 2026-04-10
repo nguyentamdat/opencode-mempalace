@@ -5,13 +5,13 @@ import {
   isInitialized,
   initialize,
   wakeUp,
-} from "../src/mempalace-cli.js";
+} from "./mempalace-cli.js";
 import * as path from "node:path";
 import * as fs from "node:fs";
 import * as os from "node:os";
 
 // Mock spawn module
-mock.module("../src/spawn.js", () => ({
+mock.module("./spawn.js", () => ({
   runCommand: mock(async (cmd: string, args: string[]) => {
     if (cmd === "mempalace") {
       return true;

@@ -1,32 +1,30 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { StateManager } from "../src/state.js";
+import { StateManager } from "./state.js";
 
 describe("StateManager", () => {
   let stateManager: StateManager;
 
-  beforeEach(() => {
-    stateManager = new StateManager();
+  it("should use default threshold of 15 when not specified", () => {
+    const sm = new StateManager();
+    for (let i = 0; i < 14; i++) {
+      sm.incrementAndCheck("test-session");
+    }
+    expect(sm.incrementAndCheck("test-session")).toBe(true);
   });
 
-  describe("constructor", () => {
-    it("should use default threshold of 15 when not specified", () => {
-      const sm = new StateManager();
-      for (let i = 0; i < 14; i++) {
-        sm.incrementAndCheck("test-session");
-      }
-      expect(sm.incrementAndCheck("test-session")).toBe(true);
-    });
-
-    it("should use custom threshold when specified", () => {
-      const sm = new StateManager(5);
-      for (let i = 0; i < 4; i++) {
-        sm.incrementAndCheck("test-session");
-      }
-      expect(sm.incrementAndCheck("test-session")).toBe(true);
-    });
+  it("should use custom threshold when specified", () => {
+    const sm = new StateManager(5);
+    for (let i = 0; i < 4; i++) {
+      sm.incrementAndCheck("test-session");
+    }
+    expect(sm.incrementAndCheck("test-session")).toBe(true);
   });
 
   describe("incrementAndCheck", () => {
+    beforeEach(() => {
+      stateManager = new StateManager();
+    });
+
     it("should increment counter and return false before threshold", () => {
       expect(stateManager.incrementAndCheck("session-1")).toBe(false);
       expect(stateManager.incrementAndCheck("session-1")).toBe(false);
@@ -56,6 +54,10 @@ describe("StateManager", () => {
   });
 
   describe("hasPendingMessages", () => {
+    beforeEach(() => {
+      stateManager = new StateManager();
+    });
+
     it("should return false for unknown session", () => {
       expect(stateManager.hasPendingMessages("unknown-session")).toBe(false);
     });
@@ -67,6 +69,10 @@ describe("StateManager", () => {
   });
 
   describe("resetCount", () => {
+    beforeEach(() => {
+      stateManager = new StateManager();
+    });
+
     it("should reset counter to zero", () => {
       stateManager.incrementAndCheck("session-1");
       stateManager.incrementAndCheck("session-1");
@@ -76,6 +82,10 @@ describe("StateManager", () => {
   });
 
   describe("getDirtySessions", () => {
+    beforeEach(() => {
+      stateManager = new StateManager();
+    });
+
     it("should return empty array when no sessions have pending messages", () => {
       expect(stateManager.getDirtySessions()).toEqual([]);
     });
@@ -100,6 +110,10 @@ describe("StateManager", () => {
   });
 
   describe("acquireMiningLock", () => {
+    beforeEach(() => {
+      stateManager = new StateManager();
+    });
+
     it("should return true when acquiring a free lock", () => {
       expect(stateManager.acquireMiningLock("session-1")).toBe(true);
     });
@@ -111,6 +125,10 @@ describe("StateManager", () => {
   });
 
   describe("releaseMiningLock", () => {
+    beforeEach(() => {
+      stateManager = new StateManager();
+    });
+
     it("should release the lock for a session", () => {
       stateManager.acquireMiningLock("session-1");
       stateManager.releaseMiningLock("session-1");
