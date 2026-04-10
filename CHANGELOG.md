@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.2] - 2025-01-XX
+
+### Added
+- **File logging system**: New logger module similar to oh-my-opencode
+  - Logs to both `/tmp/opencode-mempalace.log` and `~/.cache/opencode/log/opencode-mempalace.log`
+  - Buffered writes for performance (flush every 500ms or 50 entries)
+  - Three log levels: `log()`, `logWarn()`, `logError()`
+  - All logs also output to console for immediate visibility
+- **Plugin lifecycle logging**: Entry log when plugin loads showing version and directory
+- **Better error tracking**: All warnings and errors now logged to file for debugging
+
 ## [0.2.1] - 2025-01-XX
 
 ### Added

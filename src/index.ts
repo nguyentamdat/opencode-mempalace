@@ -5,6 +5,7 @@ import { checkAndUpdate, type UpdateResult } from "./auto-update.js";
 import { StateManager } from "./state.js";
 import { mine, mineSync, wakeUp, isInitialized, initialize } from "./mempalace-cli.js";
 import { getWingFromPath, isEmptyWorkspace } from "./utils.js";
+import { log, logWarn, logError } from "./logger.js";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -51,6 +52,9 @@ Project context > Agent diary. Storage + project-scoped protocol = memory.`;
 
 const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptions) => {
   const opts = (options ?? {}) as MempalacePluginOptions;
+  
+  log("Plugin loading", { version: PLUGIN_VERSION, directory: input.directory });
+  
   const mcpCommand = opts.mcpCommand ?? DEFAULT_MCP_COMMAND;
   const sessionsSeen = new Set<string>();
   const diaryWritten = new Set<string>();
@@ -61,14 +65,14 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
   // SECURITY: Validate workspace path to prevent path traversal
   let workspaceDir = path.resolve(workspaceDirRaw);
   if (!workspaceDir || workspaceDir.includes("\0") || workspaceDir.length > 4096) {
-    console.warn("[opencode-mempalace] Invalid workspace path, using current directory");
+    logWarn("Invalid workspace path, using current directory");
     workspaceDir = process.cwd();
   }
   
   let wing = getWingFromPath(workspaceDir);
   // SECURITY: Validate wing name length
   if (wing.length > 100) {
-    console.warn("[opencode-mempalace] Wing name too long, truncating");
+    logWarn("Wing name too long, truncating");
     wing = wing.substring(0, 100);
   }
   const miningThreshold =
@@ -108,7 +112,7 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
         initializationDone = true;
       })
       .catch((e) => {
-        console.warn("[opencode-mempalace] Background initialization failed:", e);
+        logError("Background initialization failed:", e);
       })
       .finally(() => {
         isInitializing = false;
@@ -159,13 +163,8 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
       .then((result) => {
         updateResult = result;
         if (result.updated) {
-          console.log(
-            `[opencode-mempalace] Auto-updated: ${result.currentVersion} → ${result.latestVersion}. Restart to apply.`,
-          );
+          log(`Auto-updated: ${result.currentVersion} → ${result.latestVersion}. Restart to apply.`);
         } else if (result.error) {
-          console.log(
-            `[opencode-mempalace] Update available: ${result.currentVersion} → ${result.latestVersion} (install failed: ${result.error})`,
-          );
         }
       })
       .catch(() => {});
