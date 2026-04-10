@@ -50,14 +50,6 @@ function flush(): void {
   }
 }
 
-/**
- * Flush logs immediately (synchronous).
- * Use this for critical logs that must be written immediately.
- */
-export function flushSync(): void {
-  flush()
-}
-
 function scheduleFlush(): void {
   if (flushTimer) return
   flushTimer = setTimeout(() => {
@@ -66,14 +58,19 @@ function scheduleFlush(): void {
   }, FLUSH_INTERVAL_MS)
 }
 
+/**
+ * Flush logs immediately (synchronous).
+ * Use this for critical logs that must be written immediately.
+ */
+export function flushSync(): void {
+  flush()
+}
+
 export function log(message: string, data?: unknown): void {
   try {
     const timestamp = new Date().toISOString()
     const logEntry = `[${timestamp}] [${PLUGIN_NAME}] ${message} ${data ? JSON.stringify(data) : ""}\n`
     buffer.push(logEntry)
-    
-    // Also output to console for immediate visibility
-    console.log(`[${PLUGIN_NAME}] ${message}`, data ?? "")
     
     if (buffer.length >= BUFFER_SIZE_LIMIT) {
       flush()
@@ -81,8 +78,7 @@ export function log(message: string, data?: unknown): void {
       scheduleFlush()
     }
   } catch {
-    // Last resort: console only
-    console.log(`[${PLUGIN_NAME}] ${message}`, data ?? "")
+    // Silent fail - don't output to console
   }
 }
 
@@ -93,16 +89,13 @@ export function logError(message: string, error?: unknown): void {
     const logEntry = `[${timestamp}] [${PLUGIN_NAME}] [ERROR] ${message} ${errorStr}\n`
     buffer.push(logEntry)
     
-    // Also output to console.error
-    console.error(`[${PLUGIN_NAME}] [ERROR] ${message}`, error ?? "")
-    
     if (buffer.length >= BUFFER_SIZE_LIMIT) {
       flush()
     } else {
       scheduleFlush()
     }
   } catch {
-    console.error(`[${PLUGIN_NAME}] [ERROR] ${message}`, error ?? "")
+    // Silent fail - don't output to console
   }
 }
 
@@ -112,16 +105,13 @@ export function logWarn(message: string, data?: unknown): void {
     const logEntry = `[${timestamp}] [${PLUGIN_NAME}] [WARN] ${message} ${data ? JSON.stringify(data) : ""}\n`
     buffer.push(logEntry)
     
-    // Also output to console.warn
-    console.warn(`[${PLUGIN_NAME}] [WARN] ${message}`, data ?? "")
-    
     if (buffer.length >= BUFFER_SIZE_LIMIT) {
       flush()
     } else {
       scheduleFlush()
     }
   } catch {
-    console.warn(`[${PLUGIN_NAME}] [WARN] ${message}`, data ?? "")
+    // Silent fail - don't output to console
   }
 }
 

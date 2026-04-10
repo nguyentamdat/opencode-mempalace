@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.5] - 2025-01-XX
+
+### Changed
+- **File-only logging**: Removed console output, logs now write only to file
+  - Log output no longer appears in terminal before TUI renders
+  - All logs go exclusively to `/tmp/opencode-mempalace.log` and `~/.cache/opencode/log/opencode-mempalace.log`
+  - Cleaner terminal experience, no console clutter before OpenCode TUI shows
+
 ## [0.2.4] - 2025-01-XX
 
 ### Fixed
