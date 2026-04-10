@@ -1,12 +1,16 @@
+import path from "node:path";
+
 import { tool, type Plugin, type PluginInput, type PluginOptions } from "@opencode-ai/plugin";
 import { checkAndUpdate, type UpdateResult } from "./auto-update.js";
 import { StateManager } from "./state.js";
-import { mine, mineSync } from "./mempalace-cli.js";
-import { getWingFromPath } from "./utils.js";
+import { mine, mineSync, wakeUp, isInitialized, initialize } from "./mempalace-cli.js";
+import { getWingFromPath, isEmptyWorkspace } from "./utils.js";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const PLUGIN_VERSION: string = require("../package.json").version;
+
+const MAX_MEMORY_LENGTH = 4000;
 
 interface MempalacePluginOptions extends Record<string, unknown> {
   /** Command array to start the mempalace MCP server. Defaults to ["python3", "-m", "mempalace.mcp_server"] (requires mempalace installed via `pip install mempalace`). */
@@ -29,25 +33,21 @@ interface MempalacePluginOptions extends Record<string, unknown> {
 
 const DEFAULT_MCP_COMMAND = ["python3", "-m", "mempalace.mcp_server"];
 
-const PALACE_PROTOCOL = `IMPORTANT — MemPalace Memory Protocol:
-1. ON WAKE-UP: Call mempalace_status to load palace overview + AAAK spec.
-2. BEFORE RESPONDING about any person, project, or past event: call mempalace_kg_query or mempalace_search FIRST. Never guess — verify.
-3. IF UNSURE about a fact (name, gender, age, relationship): say "let me check" and query the palace. Wrong is worse than slow.
-4. AFTER EACH SESSION: call mempalace_diary_write to record what happened, what you learned, what matters.
-5. WHEN FACTS CHANGE: call mempalace_kg_invalidate on the old fact, mempalace_kg_add for the new one.
+const PALACE_PROTOCOL = `IMPORTANT — MemPalace Memory Protocol (Project-First):
 
-This protocol ensures the AI KNOWS before it speaks. Storage is not memory — but storage + this protocol = memory.`;
+1. MEMORIES ARE PROJECT-SCOPED: Each workspace maps to a mempalace "wing". Always specify wing parameter when searching/querying to get project-relevant context.
 
-const SESSION_START_INSTRUCTION = `[SYSTEM — MemPalace Context Load]
-On session start, load mempalace context by calling these tools directly (do NOT delegate to a subagent):
+2. ON WAKE-UP: Call mcp_mempalace_mempalace_status + mcp_mempalace_mempalace_list_rooms(wing=current_project) + mcp_mempalace_mempalace_search(wing=current_project) to load project context.
 
-1. mcp_mempalace_mempalace_diary_read(agent_name="sisyphus", last_n=3) — recent diary entries
-2. mcp_mempalace_mempalace_status() — palace overview (wings, rooms, drawer count)
+3. BEFORE RESPONDING about project specifics: call mcp_mempalace_mempalace_search with wing=current_project FIRST. Never guess — verify against project memory.
 
-Call both in parallel. If either fails (mempalace not installed), skip silently and continue.
-Use the results to inform your responses — do not announce or summarize them unless the user asks.
-Proceed with the user's request immediately.
-<!-- MEMPALACE -->`;
+4. IF UNSURE about any fact: say "let me check" and query the palace with appropriate wing filter.
+
+5. AFTER EACH SESSION: call mcp_mempalace_mempalace_diary_write (agent diary) + consider filing important learnings to the current project's wing via mcp_mempalace_mempalace_add_drawer.
+
+6. WHEN FACTS CHANGE: mcp_mempalace_mempalace_kg_invalidate old facts, mcp_mempalace_mempalace_kg_add new ones.
+
+Project context > Agent diary. Storage + project-scoped protocol = memory.`;
 
 const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptions) => {
   const opts = (options ?? {}) as MempalacePluginOptions;
@@ -56,14 +56,66 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
   const diaryWritten = new Set<string>();
 
   // --- Auto-mining setup (ported from option-K/opencode-plugin-mempalace) ---
-  const workspaceDir = input.worktree || input.directory || process.cwd();
-  const wing = getWingFromPath(workspaceDir);
+  const workspaceDirRaw = input.worktree || input.directory || process.cwd();
+  
+  // SECURITY: Validate workspace path to prevent path traversal
+  let workspaceDir = path.resolve(workspaceDirRaw);
+  if (!workspaceDir || workspaceDir.includes("\0") || workspaceDir.length > 4096) {
+    console.warn("[opencode-mempalace] Invalid workspace path, using current directory");
+    workspaceDir = process.cwd();
+  }
+  
+  let wing = getWingFromPath(workspaceDir);
+  // SECURITY: Validate wing name length
+  if (wing.length > 100) {
+    console.warn("[opencode-mempalace] Wing name too long, truncating");
+    wing = wing.substring(0, 100);
+  }
   const miningThreshold =
     typeof opts.threshold === "number" && opts.threshold > 0
       ? opts.threshold
       : 15;
   const autoMiningEnabled = !opts.disableAutoMining;
   const stateManager = new StateManager(miningThreshold);
+
+  // --- 3-state initialization: empty, initializing, ready ---
+  let initializationDone = false;
+  let isInitializing = false;
+
+  const ensureInitialized = async (): Promise<"ready" | "initializing" | "empty"> => {
+    if (isEmptyWorkspace(workspaceDir)) {
+      return "empty";
+    }
+
+    if (initializationDone) {
+      return "ready";
+    }
+
+    if (isInitializing) {
+      return "initializing";
+    }
+
+    const initialized = await isInitialized(workspaceDir);
+    if (initialized) {
+      initializationDone = true;
+      return "ready";
+    }
+
+    // Start background initialization
+    isInitializing = true;
+    initialize(workspaceDir)
+      .then(() => {
+        initializationDone = true;
+      })
+      .catch((e) => {
+        console.warn("[opencode-mempalace] Background initialization failed:", e);
+      })
+      .finally(() => {
+        isInitializing = false;
+      });
+
+    return "initializing";
+  };
 
   // --- Exit handlers: flush dirty sessions synchronously on shutdown ---
   let isFlushing = false;
@@ -105,11 +157,11 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
         updateResult = result;
         if (result.updated) {
           console.log(
-            `[opencode-mempalace] Auto-updated: ${result.currentVersion} \u2192 ${result.latestVersion}. Restart to apply.`,
+            `[opencode-mempalace] Auto-updated: ${result.currentVersion} → ${result.latestVersion}. Restart to apply.`,
           );
         } else if (result.error) {
           console.log(
-            `[opencode-mempalace] Update available: ${result.currentVersion} \u2192 ${result.latestVersion} (install failed: ${result.error})`,
+            `[opencode-mempalace] Update available: ${result.currentVersion} → ${result.latestVersion} (install failed: ${result.error})`,
           );
         }
       })
@@ -134,25 +186,77 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
       _input: { sessionID?: string; model: unknown },
       output: { system: string[] },
     ) => {
+      // Always inject PALACE_PROTOCOL
       if (!opts.disableProtocol) {
         output.system.push(PALACE_PROTOCOL);
-        // Show toast notification at session start
-        input.client?.tui?.showToast({
-          body: {
-            title: `MemPalace ${PLUGIN_VERSION}`,
-            message: "Memory system active — auto-mining enabled",
-            variant: "info" as const,
-            duration: 5000,
-          },
-        }).catch(() => {});
       }
+
+      // Handle update notification
       if (updateResult?.updated) {
         output.system.push(
-          `[opencode-mempalace] Updated ${updateResult.currentVersion} \u2192 ${updateResult.latestVersion}. Restart OpenCode to apply.`,
+          `[opencode-mempalace] Updated ${updateResult.currentVersion} → ${updateResult.latestVersion}. Restart OpenCode to apply.`,
         );
       }
     },
 
+    // --- Hook 2: First message wakeUp injection ---
+    "chat.message": async (
+      input: { sessionID: string; messageID?: string },
+      output: {
+        parts: Array<{
+          type: string;
+          text?: string;
+          [key: string]: unknown;
+        }>;
+      },
+    ) => {
+      // Only inject wakeUp on first message of session
+      if (!opts.disableAutoLoad && !sessionsSeen.has(input.sessionID)) {
+        sessionsSeen.add(input.sessionID);
+
+        const state = await ensureInitialized();
+        let memoryText = "";
+
+        if (state === "empty") {
+          memoryText = "[MemPalace]: This environment has no memory yet. Please proceed with standard logic.";
+        } else if (state === "initializing") {
+          memoryText = "[MemPalace]: The memory system is being built asynchronously in the background. The current response will not include historical memory context.";
+        } else if (state === "ready") {
+          const memory = await wakeUp(wing);
+          if (memory) {
+            memoryText = memory.length > MAX_MEMORY_LENGTH
+              ? memory.substring(0, MAX_MEMORY_LENGTH) + "\n...[Memory Truncated]"
+              : memory;
+          }
+        }
+
+        if (memoryText) {
+          const firstTextPart = output.parts.find((p) => p.type === "text");
+          if (firstTextPart && "text" in firstTextPart) {
+            firstTextPart.text = `[SYSTEM — MemPalace Context Load]\n${memoryText}\n\n${firstTextPart.text}`;
+          }
+        }
+      }
+
+      // Auto-mining: increment message counter
+      if (autoMiningEnabled && stateManager.incrementAndCheck(input.sessionID)) {
+        if (stateManager.acquireMiningLock(input.sessionID)) {
+          const state = await ensureInitialized();
+          if (state !== "ready") {
+            stateManager.releaseMiningLock(input.sessionID);
+            return;
+          }
+
+          setTimeout(() => {
+            mine(workspaceDir, "convos", wing)
+              .catch(() => {})
+              .finally(() => {
+                stateManager.releaseMiningLock(input.sessionID);
+              });
+          }, 2000);
+        }
+      }
+    },
 
     // --- Hook 3: Track diary writes ---
     "tool.execute.after": async (
@@ -169,10 +273,38 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
       input: { sessionID: string },
       output: { context: string[]; prompt?: string },
     ) => {
+      // Check diary first
       if (!diaryWritten.has(input.sessionID)) {
         output.context.push(
           "⚠️ MEMPALACE: No diary entry written yet for this session. Call mcp_mempalace_mempalace_diary_write with a session summary BEFORE important context is lost to compaction."
         );
+      }
+
+      // Then inject memory context (like original plugin)
+      const state = await ensureInitialized();
+
+      if (state === "empty") {
+        output.context.push(
+          "[MemPalace]: This environment has no memory yet. Please proceed with standard logic.",
+        );
+        return;
+      }
+
+      if (state === "initializing") {
+        output.context.push(
+          "[MemPalace]: The memory system is being built asynchronously in the background. The current response will not include historical memory context.",
+        );
+        return;
+      }
+
+      // state === "ready" - load memory via wakeUp
+      const memory = await wakeUp(wing);
+      if (memory) {
+        const truncatedMemory =
+          memory.length > MAX_MEMORY_LENGTH
+            ? memory.substring(0, MAX_MEMORY_LENGTH) + "\n...[Memory Truncated]"
+            : memory;
+        output.context.push(truncatedMemory);
       }
     },
 
@@ -198,6 +330,13 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
             ev.properties?.sessionID ?? ev.properties?.info?.id;
           if (!sessionID || !stateManager.hasPendingMessages(sessionID)) return;
           if (!stateManager.acquireMiningLock(sessionID)) return;
+
+          const state = await ensureInitialized();
+          if (state !== "ready") {
+            stateManager.releaseMiningLock(sessionID);
+            return;
+          }
+
           setTimeout(() => {
             mine(workspaceDir, "convos", wing)
               .catch(() => {})
@@ -208,46 +347,7 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
           }, 2000);
         },
 
-    // --- Hook 5: Auto-load on first message + auto-mining increment ---
-    "chat.message": opts.disableAutoLoad && !autoMiningEnabled
-      ? undefined
-      : async (
-          input: { sessionID: string; messageID?: string },
-          output: {
-            parts: Array<{
-              type: string;
-              text?: string;
-              [key: string]: unknown;
-            }>;
-          },
-        ) => {
-          // Auto-load SESSION_START_INSTRUCTION on first message (if enabled).
-          if (!opts.disableAutoLoad && !sessionsSeen.has(input.sessionID)) {
-            sessionsSeen.add(input.sessionID);
-            const firstTextPart = output.parts.find((p) => p.type === "text");
-            if (firstTextPart && "text" in firstTextPart) {
-              firstTextPart.text = `${SESSION_START_INSTRUCTION}\n\n${firstTextPart.text}`;
-            }
-          }
-
-          // Auto-mining: increment message counter, trigger mine when threshold reached.
-          if (
-            autoMiningEnabled &&
-            stateManager.incrementAndCheck(input.sessionID)
-          ) {
-            if (stateManager.acquireMiningLock(input.sessionID)) {
-              setTimeout(() => {
-                mine(workspaceDir, "convos", wing)
-                  .catch(() => {})
-                  .finally(() => {
-                    stateManager.releaseMiningLock(input.sessionID);
-                  });
-              }, 2000);
-            }
-          }
-        },
-
-    // --- Hook 6: Custom tool ---
+    // --- Hook 5: Custom tool ---
     tool: {
       mempalace_check_diary: tool({
         description:
