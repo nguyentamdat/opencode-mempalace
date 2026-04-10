@@ -3,6 +3,10 @@ import { checkAndUpdate, type UpdateResult } from "./auto-update.js";
 import { StateManager } from "./state.js";
 import { mine, mineSync } from "./mempalace-cli.js";
 import { getWingFromPath } from "./utils.js";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const PLUGIN_VERSION: string = require("../package.json").version;
 
 interface MempalacePluginOptions extends Record<string, unknown> {
   /** Command array to start the mempalace MCP server. Defaults to ["python3", "-m", "mempalace.mcp_server"] (requires mempalace installed via `pip install mempalace`). */
@@ -132,6 +136,15 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
     ) => {
       if (!opts.disableProtocol) {
         output.system.push(PALACE_PROTOCOL);
+        // Show toast notification at session start
+        input.client?.tui?.showToast({
+          body: {
+            title: `MemPalace ${PLUGIN_VERSION}`,
+            message: "Memory system active — auto-mining enabled",
+            variant: "info" as const,
+            duration: 5000,
+          },
+        }).catch(() => {});
       }
       if (updateResult?.updated) {
         output.system.push(
@@ -139,6 +152,7 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
         );
       }
     },
+
 
     // --- Hook 3: Track diary writes ---
     "tool.execute.after": async (
