@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.3] - 2025-01-XX
+
+### Fixed
+- **Runtime-agnostic plugin**: Now works with both Bun and Node.js runtimes
+  - Replaced Bun.spawn with runtime-agnostic spawn utilities
+  - Replaced Bun shell API (input.$) with Node.js child_process
+  - Plugin now works correctly in OpenCode regardless of runtime (Bun or Node.js)
+  - Added spawn.ts module for cross-runtime compatibility
+
 ## [0.2.2] - 2025-01-XX
 
 ### Added

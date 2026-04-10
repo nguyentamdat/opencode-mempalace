@@ -6,6 +6,7 @@ import { StateManager } from "./state.js";
 import { mine, mineSync, wakeUp, isInitialized, initialize } from "./mempalace-cli.js";
 import { getWingFromPath, isEmptyWorkspace } from "./utils.js";
 import { log, logWarn, logError } from "./logger.js";
+import { runCommand } from "./spawn.js";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -152,8 +153,8 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
     checkAndUpdate(
       async (cwd) => {
         try {
-          const result = await input.$`bun install`.cwd(cwd).quiet().nothrow();
-          return result.exitCode === 0;
+          // Use runtime-agnostic spawn instead of Bun shell API
+          return await runCommand("bun", ["install"], 30000);
         } catch {
           return false;
         }

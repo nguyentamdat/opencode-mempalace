@@ -1,8 +1,8 @@
 /**
  * Thin wrapper around the `mempalace` CLI for background auto-mining.
  *
- * Uses Bun.spawn / Bun.spawnSync (no execa dependency). Tries a fallback
- * command chain so the plugin still works across different install methods:
+ * Uses runtime-agnostic spawn utilities that work with both Bun and Node.js.
+ * Tries a fallback command chain so the plugin still works across different install methods:
  *   1. `mempalace ...`                (pip --user + ~/.local/bin on PATH)
  *   2. `python3 -m mempalace ...`     (pip install, python3 on PATH)
  *   3. `python -m mempalace ...`      (Windows, or systems with only `python`)
@@ -10,12 +10,14 @@
  * All operations are best-effort: failures are silent, no exceptions
  * propagate into plugin hooks. If mempalace is not installed, the plugin
  * simply skips mining and continues normal operation.
- *
- * Ported from option-K/opencode-plugin-mempalace src/mempalace-cli.ts (execa
- * replaced with Bun.spawn).
  */
 
 import path from "node:path";
+import {
+  runCommand,
+  runCommandSync,
+  runCommandWithOutput,
+} from "./spawn.js";
 
 const CLI_TIMEOUT_MS = 5000;
 
@@ -34,33 +36,6 @@ function buildMineCommands(
   ];
 }
 
-async function tryRun(cmd: string, args: string[]): Promise<boolean> {
-  try {
-    const proc = Bun.spawn([cmd, ...args], {
-      stdout: "ignore",
-      stderr: "ignore",
-      timeout: CLI_TIMEOUT_MS,
-    });
-    await proc.exited;
-    return proc.exitCode === 0;
-  } catch {
-    return false;
-  }
-}
-
-function tryRunSync(cmd: string, args: string[]): boolean {
-  try {
-    const result = Bun.spawnSync([cmd, ...args], {
-      stdout: "ignore",
-      stderr: "ignore",
-      timeout: CLI_TIMEOUT_MS,
-    });
-    return result.exitCode === 0;
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Asynchronously mine a workspace directory into the palace.
  *
@@ -74,7 +49,7 @@ export async function mine(
   wing: string,
 ): Promise<void> {
   for (const { cmd, args } of buildMineCommands(dir, mode, wing)) {
-    if (await tryRun(cmd, args)) return;
+    if (await runCommand(cmd, args, CLI_TIMEOUT_MS)) return;
   }
 }
 
@@ -86,26 +61,7 @@ export async function mine(
  */
 export function mineSync(dir: string, mode: string, wing: string): void {
   for (const { cmd, args } of buildMineCommands(dir, mode, wing)) {
-    if (tryRunSync(cmd, args)) return;
-  }
-}
-/**
- * Execute mempalace CLI command with fallback chain.
- * Returns stdout if successful, null on failure.
- */
-async function executeWithOutput(cmd: string, args: string[]): Promise<string | null> {
-  try {
-    const proc = Bun.spawn([cmd, ...args], {
-      stdout: "pipe",
-      stderr: "ignore",
-      timeout: CLI_TIMEOUT_MS,
-    });
-    const output = await new Response(proc.stdout).text();
-    await proc.exited;
-    if (proc.exitCode === 0) return output.trim();
-    return null;
-  } catch {
-    return null;
+    if (runCommandSync(cmd, args, CLI_TIMEOUT_MS)) return;
   }
 }
 
@@ -116,10 +72,10 @@ async function executeWithOutput(cmd: string, args: string[]): Promise<string | 
 export async function isInitialized(dir: string): Promise<boolean> {
   const palacePath = path.join(dir, ".mempalace", "palace");
   const args = ["status", "--palace", palacePath];
-  
+
   for (const cmd of ["mempalace", "python3", "python"]) {
     const fullArgs = cmd === "mempalace" ? args : ["-m", "mempalace", ...args];
-    const result = await executeWithOutput(cmd, fullArgs);
+    const result = await runCommandWithOutput(cmd, fullArgs, CLI_TIMEOUT_MS);
     if (result !== null) return true;
   }
   return false;
@@ -131,20 +87,10 @@ export async function isInitialized(dir: string): Promise<boolean> {
  */
 export async function initialize(dir: string): Promise<void> {
   const initArgs = ["init", "--yes", dir];
-  
+
   for (const cmd of ["mempalace", "python3", "python"]) {
     const args = cmd === "mempalace" ? initArgs : ["-m", "mempalace", ...initArgs];
-    try {
-      const proc = Bun.spawn([cmd, ...args], {
-        stdout: "ignore",
-        stderr: "ignore",
-        timeout: CLI_TIMEOUT_MS,
-      });
-      await proc.exited;
-      if (proc.exitCode === 0) return;
-    } catch {
-      // Try next command
-    }
+    if (await runCommand(cmd, args, CLI_TIMEOUT_MS)) return;
   }
 }
 
@@ -154,10 +100,10 @@ export async function initialize(dir: string): Promise<void> {
  */
 export async function wakeUp(wing: string): Promise<string | null> {
   const args = ["wake-up", "--wing", wing];
-  
+
   for (const cmd of ["mempalace", "python3", "python"]) {
     const fullArgs = cmd === "mempalace" ? args : ["-m", "mempalace", ...args];
-    const result = await executeWithOutput(cmd, fullArgs);
+    const result = await runCommandWithOutput(cmd, fullArgs, CLI_TIMEOUT_MS);
     if (result !== null && result.length > 0) return result;
   }
   return null;
