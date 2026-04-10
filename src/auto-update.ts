@@ -37,6 +37,28 @@ const CACHE_DIR = path.join(getOpenCodeCacheDir(), "packages");
 const CONFIG_DIR = getOpenCodeConfigDir();
 
 // --- Version detection ---
+function isPinnedVersion(): boolean {
+  const pkgPaths = [
+    path.join(CACHE_DIR, "package.json"),
+    path.join(CACHE_DIR, `${PACKAGE_NAME}@latest`, "package.json"),
+  ];
+
+  for (const pkgPath of pkgPaths) {
+    try {
+      if (fs.existsSync(pkgPath)) {
+        const content = fs.readFileSync(pkgPath, "utf-8");
+        const pkg = JSON.parse(content);
+        const version = pkg.dependencies?.[PACKAGE_NAME];
+        // Pinned if version is specified and not "latest"
+        if (version && version !== "latest") {
+          return true;
+        }
+      }
+    } catch {}
+  }
+  return false;
+}
+
 
 function getCachedVersion(): string | null {
   const locations = [
@@ -198,12 +220,19 @@ export interface UpdateResult {
 /**
  * Check npm registry for a newer version and install it if available.
  * @param runInstall - Callback to run `bun install` in a given directory. Returns true on success.
+ * @param respectPin - If true, skip update check when version is pinned in package.json
  */
 export async function checkAndUpdate(
   runInstall: (cwd: string) => Promise<boolean>,
+  respectPin: boolean = false,
 ): Promise<UpdateResult> {
   const currentVersion = getCachedVersion();
   const latestVersion = await getLatestVersion();
+
+  // Skip if version is pinned and respectPin is true
+  if (respectPin && isPinnedVersion()) {
+    return { currentVersion, latestVersion, updated: false };
+  }
 
   if (!currentVersion || !latestVersion) {
     return { currentVersion, latestVersion, updated: false };

@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2025-01-XX
+
+### Added
+- **Pinned version respect**: Auto-update now skips if user has pinned a specific version in their config
+  - Detects pinned versions like `"opencode-mempalace@0.2.0"` in config
+  - Only auto-updates when using unpinned `"opencode-mempalace"` (latest)
+  - New `respectPin` parameter in `checkAndUpdate()` function
+
+### Fixed
+- **Cache corruption handling**: Plugin now works correctly even when npm cache is corrupted
+
 ## [0.2.0] - 2025-01-XX
 
 ### Added

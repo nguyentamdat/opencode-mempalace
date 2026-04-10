@@ -145,14 +145,17 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
   // --- Auto-update check (fire-and-forget) ---
   let updateResult: UpdateResult | null = null;
   if (!opts.disableAutoUpdate) {
-    checkAndUpdate(async (cwd) => {
-      try {
-        const result = await input.$`bun install`.cwd(cwd).quiet().nothrow();
-        return result.exitCode === 0;
-      } catch {
-        return false;
-      }
-    })
+    checkAndUpdate(
+      async (cwd) => {
+        try {
+          const result = await input.$`bun install`.cwd(cwd).quiet().nothrow();
+          return result.exitCode === 0;
+        } catch {
+          return false;
+        }
+      },
+      true, // respectPin - skip update if version is pinned
+    )
       .then((result) => {
         updateResult = result;
         if (result.updated) {
