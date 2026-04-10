@@ -1,8 +1,11 @@
 import { tool, type Plugin, type PluginInput, type PluginOptions } from "@opencode-ai/plugin";
 import { checkAndUpdate, type UpdateResult } from "./auto-update.js";
+import { StateManager } from "./state.js";
+import { mine, mineSync } from "./mempalace-cli.js";
+import { getWingFromPath } from "./utils.js";
 
 interface MempalacePluginOptions extends Record<string, unknown> {
-  /** Command array to start the mempalace MCP server. Defaults to ["bun", "run", "<auto-detected path>"] */
+  /** Command array to start the mempalace MCP server. Defaults to ["python3", "-m", "mempalace.mcp_server"] (requires mempalace installed via `pip install mempalace`). */
   mcpCommand?: string[];
   /** Disable auto-registering mempalace MCP server (if you configure it manually in opencode.jsonc) */
   disableMcp?: boolean;
@@ -12,11 +15,15 @@ interface MempalacePluginOptions extends Record<string, unknown> {
   disableAutoLoad?: boolean;
   /** Disable auto-update check on session start */
   disableAutoUpdate?: boolean;
-  /** ChromaDB server URL. Defaults to http://localhost:8000 */
-  chromaUrl?: string;
+  /** Override the mempalace palace directory. Maps to MEMPALACE_PALACE_PATH. Defaults to ~/.mempalace/palace (mempalace's own default). */
+  palacePath?: string;
+  /** Disable auto-mining on session idle / message threshold / shutdown. Defaults to false (auto-mining enabled). */
+  disableAutoMining?: boolean;
+  /** Number of chat messages per session before auto-mining is triggered. Defaults to 15. */
+  threshold?: number;
 }
 
-const DEFAULT_MCP_COMMAND = ["npx", "-y", "-p", "@nguyentamdat/mempalace", "mempalace-mcp"];
+const DEFAULT_MCP_COMMAND = ["python3", "-m", "mempalace.mcp_server"];
 
 const PALACE_PROTOCOL = `IMPORTANT — MemPalace Memory Protocol:
 1. ON WAKE-UP: Call mempalace_status to load palace overview + AAAK spec.
@@ -33,7 +40,7 @@ On session start, load mempalace context by calling these tools directly (do NOT
 1. mcp_mempalace_mempalace_diary_read(agent_name="sisyphus", last_n=3) — recent diary entries
 2. mcp_mempalace_mempalace_status() — palace overview (wings, rooms, drawer count)
 
-Call both in parallel. If either fails (ChromaDB not running), skip silently and continue.
+Call both in parallel. If either fails (mempalace not installed), skip silently and continue.
 Use the results to inform your responses — do not announce or summarize them unless the user asks.
 Proceed with the user's request immediately.
 <!-- MEMPALACE -->`;
@@ -43,6 +50,41 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
   const mcpCommand = opts.mcpCommand ?? DEFAULT_MCP_COMMAND;
   const sessionsSeen = new Set<string>();
   const diaryWritten = new Set<string>();
+
+  // --- Auto-mining setup (ported from option-K/opencode-plugin-mempalace) ---
+  const workspaceDir = input.worktree || input.directory || process.cwd();
+  const wing = getWingFromPath(workspaceDir);
+  const miningThreshold =
+    typeof opts.threshold === "number" && opts.threshold > 0
+      ? opts.threshold
+      : 15;
+  const autoMiningEnabled = !opts.disableAutoMining;
+  const stateManager = new StateManager(miningThreshold);
+
+  // --- Exit handlers: flush dirty sessions synchronously on shutdown ---
+  let isFlushing = false;
+  const flushDirtySessions = (): void => {
+    if (!autoMiningEnabled || isFlushing) return;
+    isFlushing = true;
+    const dirty = stateManager.getDirtySessions();
+    if (dirty.length > 0) {
+      mineSync(workspaceDir, "convos", wing);
+      for (const id of dirty) {
+        stateManager.resetCount(id);
+      }
+    }
+  };
+  if (autoMiningEnabled) {
+    process.on("exit", flushDirtySessions);
+    process.on("SIGINT", () => {
+      flushDirtySessions();
+      process.exit(130);
+    });
+    process.on("SIGTERM", () => {
+      flushDirtySessions();
+      process.exit(143);
+    });
+  }
 
   // --- Auto-update check (fire-and-forget) ---
   let updateResult: UpdateResult | null = null;
@@ -79,7 +121,7 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
             config.mcp.mempalace = {
               type: "local" as const,
               command: mcpCommand,
-              environment: { CHROMA_URL: opts.chromaUrl ?? "http://localhost:8001" },
+              environment: opts.palacePath ? { MEMPALACE_PALACE_PATH: opts.palacePath } : {},
             };
           }
         },
@@ -120,8 +162,40 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
       }
     },
 
-    // --- Hook 5: Auto-load on first message ---
-    "chat.message": opts.disableAutoLoad
+    // --- Hook 7: Event-driven auto-mining on session idle/deletion ---
+    event: !autoMiningEnabled
+      ? undefined
+      : async (params: { event: unknown }) => {
+          const ev = params.event as {
+            type?: string;
+            properties?: {
+              sessionID?: string;
+              info?: { id?: string };
+              status?: { type?: string };
+            };
+          };
+          const isIdleEvent =
+            ev.type === "session.idle" ||
+            ev.type === "session.deleted" ||
+            (ev.type === "session.status" &&
+              ev.properties?.status?.type === "idle");
+          if (!isIdleEvent) return;
+          const sessionID =
+            ev.properties?.sessionID ?? ev.properties?.info?.id;
+          if (!sessionID || !stateManager.hasPendingMessages(sessionID)) return;
+          if (!stateManager.acquireMiningLock(sessionID)) return;
+          setTimeout(() => {
+            mine(workspaceDir, "convos", wing)
+              .catch(() => {})
+              .finally(() => {
+                stateManager.releaseMiningLock(sessionID);
+                stateManager.resetCount(sessionID);
+              });
+          }, 2000);
+        },
+
+    // --- Hook 5: Auto-load on first message + auto-mining increment ---
+    "chat.message": opts.disableAutoLoad && !autoMiningEnabled
       ? undefined
       : async (
           input: { sessionID: string; messageID?: string },
@@ -133,12 +207,29 @@ const mempalacePlugin: Plugin = async (input: PluginInput, options?: PluginOptio
             }>;
           },
         ) => {
-          if (sessionsSeen.has(input.sessionID)) return;
-          sessionsSeen.add(input.sessionID);
+          // Auto-load SESSION_START_INSTRUCTION on first message (if enabled).
+          if (!opts.disableAutoLoad && !sessionsSeen.has(input.sessionID)) {
+            sessionsSeen.add(input.sessionID);
+            const firstTextPart = output.parts.find((p) => p.type === "text");
+            if (firstTextPart && "text" in firstTextPart) {
+              firstTextPart.text = `${SESSION_START_INSTRUCTION}\n\n${firstTextPart.text}`;
+            }
+          }
 
-          const firstTextPart = output.parts.find((p) => p.type === "text");
-          if (firstTextPart && "text" in firstTextPart) {
-            firstTextPart.text = `${SESSION_START_INSTRUCTION}\n\n${firstTextPart.text}`;
+          // Auto-mining: increment message counter, trigger mine when threshold reached.
+          if (
+            autoMiningEnabled &&
+            stateManager.incrementAndCheck(input.sessionID)
+          ) {
+            if (stateManager.acquireMiningLock(input.sessionID)) {
+              setTimeout(() => {
+                mine(workspaceDir, "convos", wing)
+                  .catch(() => {})
+                  .finally(() => {
+                    stateManager.releaseMiningLock(input.sessionID);
+                  });
+              }, 2000);
+            }
           }
         },
 

@@ -15,33 +15,24 @@ Auto-registers the MemPalace MCP server, injects the memory protocol into the sy
 
 ## Prerequisites
 
-### 1. ChromaDB
-
-The mempalace MCP server requires a running [ChromaDB](https://www.trychroma.com/) instance for vector storage.
+Install the [original Python mempalace](https://github.com/milla-jovovich/mempalace) globally on your system. This plugin does **not** bundle or auto-install it.
 
 ```bash
-# Docker (recommended)
-docker run -d --name chromadb \
-  -p 127.0.0.1:8000:8000 \
-  -v chromadb-data:/chroma/chroma \
-  --restart unless-stopped \
-  chromadb/chroma:latest
-
-# Or pip
-pip install chromadb
-chroma run --host 0.0.0.0 --port 8000
+pip install mempalace
 ```
 
-### 2. mempalace-js
+Requires **Python 3.9+**. ChromaDB is pulled in as a transitive dependency and runs locally via SQLite — no Docker, no external service needed.
 
-Install the [mempalace-js](https://github.com/nguyentamdat/mempalace-js) MCP server:
+Verify the module resolves against your default `python3`:
 
 ```bash
-npm install -g @nguyentamdat/mempalace
-# Or clone and build
-git clone https://github.com/nguyentamdat/mempalace-js.git
-cd mempalace-js && bun install
+python3 -c "import mempalace.mcp_server; print('ok')"
 ```
+
+> **pipx users**: Override `mcpCommand` to point at the pipx venv Python (e.g. `~/.local/pipx/venvs/mempalace/bin/python`), since pipx isolates modules from the system `python3`.
+>
+> **Windows users**: Override `mcpCommand` to `["python", "-m", "mempalace.mcp_server"]` since `python3` is typically not on PATH.
+
 ## What it does
 
 1. **MCP auto-registration** — Adds the mempalace MCP server to your OpenCode session automatically (19 tools: search, diary, knowledge graph, entity management, etc.)
@@ -54,11 +45,11 @@ Pass options via your OpenCode plugin config:
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `mcpCommand` | `string[]` | Auto-detected | Command to start the MCP server |
+| `mcpCommand` | `string[]` | `["python3", "-m", "mempalace.mcp_server"]` | Command to start the mempalace MCP server |
 | `disableMcp` | `boolean` | `false` | Skip auto-registering MCP server |
 | `disableProtocol` | `boolean` | `false` | Skip injecting PALACE_PROTOCOL |
 | `disableAutoLoad` | `boolean` | `false` | Skip auto-loading context on first message |
-| `chromaUrl` | `string` | `http://localhost:8001` | ChromaDB server URL |
+| `palacePath` | `string` | `~/.mempalace/palace` | Override palace data directory (sets `MEMPALACE_PALACE_PATH`) |
 ## MCP Tools
 
 The mempalace MCP server exposes 19 tools:
@@ -89,16 +80,15 @@ The mempalace MCP server exposes 19 tools:
 
 | Variable | Description | Default |
 |---|---|---|
-| `CHROMA_URL` | ChromaDB server URL | `http://localhost:8000` |
 | `MEMPALACE_PALACE_PATH` | Palace data directory | `~/.mempalace/palace` |
+| `MEMPALACE_COLLECTION_NAME` | ChromaDB collection name | `mempalace_drawers` |
 
 ## Related
 
-- [mempalace-js](https://github.com/nguyentamdat/mempalace-js) — Full Bun/TypeScript port of the mempalace system (CLI + MCP server)
 - [mempalace](https://github.com/milla-jovovich/mempalace) — Original Python implementation
 ## Acknowledgements
 
-This project is a Bun/TypeScript port of the original [mempalace](https://github.com/milla-jovovich/mempalace) by [milla-jovovich](https://github.com/milla-jovovich). The palace architecture, AAAK compression dialect, knowledge graph design, and MCP tool definitions all originate from their work.
+This plugin wraps the original [mempalace](https://github.com/milla-jovovich/mempalace) by [milla-jovovich](https://github.com/milla-jovovich). The palace architecture, AAAK compression dialect, knowledge graph design, and MCP tool definitions all originate from their work — this repository is just the OpenCode integration layer.
 
 ## License
 
