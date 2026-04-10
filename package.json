@@ -1,6 +1,6 @@
 {
   "name": "opencode-mempalace",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "description": "OpenCode plugin for MemPalace memory system — auto-registers MCP server, injects memory protocol into system prompt, and loads context on session start",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
