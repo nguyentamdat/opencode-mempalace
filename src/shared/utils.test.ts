@@ -14,15 +14,28 @@ describe("getWingFromPath", () => {
   });
 
   it("should sanitize workspace name", () => {
-    expect(getWingFromPath("/home/dat/opencode-mempalace")).toBe("wing_opencode-mempalace");
+    expect(getWingFromPath("/home/dat/opencode-mempalace")).toBe("wing_opencode_mempalace");
   });
 
-  it("should replace non-alphanumeric with hyphens", () => {
-    expect(getWingFromPath("/home/dat/My Project")).toBe("wing_my-project");
+  it("should replace non-alphanumeric with underscores", () => {
+    expect(getWingFromPath("/home/dat/My Project")).toBe("wing_my_project");
   });
 
   it("should handle special characters", () => {
-    expect(getWingFromPath("/projects/test_app.v2")).toBe("wing_test-app-v2");
+    expect(getWingFromPath("/projects/test_app.v2")).toBe("wing_test_app_v2");
+  });
+
+  it("should match MemPalace's slug rule so wakeUp() finds the wing", () => {
+    // MemPalace's _safe_wing_slug normalises every separator to "_" and the
+    // wing lookup is an exact match, so any separator must map to "_" here.
+    for (const [dir, expected] of [
+      ["/home/dat/my-project", "wing_my_project"],
+      ["/home/dat/my_project", "wing_my_project"],
+      ["/home/dat/my project", "wing_my_project"],
+      ["/home/dat/my.project", "wing_my_project"],
+    ] as const) {
+      expect(getWingFromPath(dir)).toBe(expected);
+    }
   });
 });
 
